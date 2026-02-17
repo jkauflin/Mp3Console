@@ -23,26 +23,9 @@ namespace Mp3Console
                 .AddUserSecrets<Program>()
                 .Build();
 
-            /*
-            // Get configuration parameters from the Secrets JSON (not checked into source code control)
-            IConfigurationRoot config = new ConfigurationBuilder()
-                .AddUserSecrets<Program>()
-                .Build();
-            jjkwebStorageConnStr = config["jjkwebStorageConnStr"];
-            jjkdb1Uri = config["jjkdb1Uri"];
-            jjkdb1Key = config["jjkdb1Key"];
-            */
-
             var clientId = config["SpotifyClientId"];
             var clientSecret = config["SpotifyClientSecret"]; // optional for PKCE but useful for refresh on some flows
-            //var redirectUri = config["Spotify:RedirectUri"] ?? "http://127.0.0.1:5000/callback";
             var redirectUri = "http://127.0.0.1:5000/callback";
-
-            if (string.IsNullOrWhiteSpace(clientId))
-            {
-                Console.WriteLine("Spotify:ClientId is missing from user secrets. Use dotnet user-secrets or __Manage User Secrets__ in Visual Studio.");
-                return;
-            }
 
             // Attempt to load stored tokens
             var tokenStore = new TokenStore();
@@ -133,38 +116,23 @@ namespace Mp3Console
                 tokenStore.Save(tokenResponse);
             }
 
+            var playlistPage = await spotify.Playlists.CurrentUsers();
 
-            /*
-            // 2. Efficiently paginate through ALL playlists using the built-in Paginator
-            var allPlaylists = await spotify.PaginateAll()
-                (firstPage);
-
-            Console.WriteLine($"Found {allPlaylists.Count} playlists:");
-            foreach (var playlist in allPlaylists)
-            {            var allPlaylists = new List<SimplePlaylist>();
-
-                Console.WriteLine($"- {playlist.Name} (ID: {playlist.Id})");
-            }
-            */
-
-
-            // Get current user's playlists (auto-paging)
-            var allPlaylists = new List<String>();
-            //var allPlaylists = new List<SimplePlaylist>();
-
-            var page = await spotify.Playlists.CurrentUsers();
-            //allPlaylists.AddRange(page.Items);
-            while (page.Next != null)
+            // 3. Handle Pagination (Optional but Recommended)
+            // Use Paginate to automatically fetch all playlists if the user has more than 50
+            int cnt = 0;
+            string playlistId = "";
+            await foreach (var playlist in spotify.Paginate(playlistPage))
             {
-                page = await spotify.NextPage(page);
-                /*
-                •	Or the SDK follows the exact Next URL returned by the API 
-                (which uses /users/{id}/playlists) while the token must be used against the 
-                /me/playlists flow; that causes an auth mismatch on subsequent requests.
-                 */
-                //allPlaylists.AddRange(page.Items);
-            }
+                cnt++;
+                if (cnt == 1)
+                {
+                    Console.WriteLine($"{cnt} Name: {playlist.Name}, ID: {playlist.Id}");
+                    playlistId = playlist.Id;
+                }
 
+                //Console.WriteLine($"Total Tracks: {playlist.Tracks.Total}");
+            }
 
             /*
             Console.WriteLine();
@@ -188,8 +156,88 @@ namespace Mp3Console
             }
 
             var playlistId = allPlaylists[sel - 1].Id;
+            */
+
+
+            // 1. Get the initial paging object for the playlist items
+            //var playlistItems = await spotify.Playlists.GetItems("YOUR_PLAYLIST_ID");
+            var playlistItems = await spotify.Playlists.GetPlaylistItems(playlistId);
+
+            // 2. Use Paginate to iterate through all pages of tracks automatically
+            await foreach (var item in spotify.Paginate(playlistItems))
+            {
+                // Items in a playlist can be tracks or episodes (IPlayableItem)
+                if (item.Item is SpotifyAPI.Web.FullTrack track)
+                {
+                    string fullDate = track.Album.ReleaseDate;
+
+                    // Extract the year (first 4 characters)
+                    string year = !string.IsNullOrEmpty(fullDate) && fullDate.Length >= 4
+                                  ? fullDate.Substring(0, 4)
+                                  : "";
+
+                    // 1. Get the ID of the first artist on the track
+                    var artistId = track.Artists[0].Id;
+                    // 2. Fetch the Full Artist object to see their genres
+                    var fullArtist = await spotify.Artists.Get(artistId);
+                    // 3. Access the genres list
+                    List<string> genres = fullArtist.Genres;
+
+                    string mainGenre = "";
+                    if (fullArtist.Genres != null && fullArtist.Genres.Any())
+                    {
+                        mainGenre = fullArtist.Genres[0];
+                    }
+                    else
+                    {
+                        mainGenre = "Unknown"; // Fallback for empty/null results
+                    }
+
+                    // track.Type = "Track"
+                    string albumImageUrl = track.Album.Images.FirstOrDefault()?.Url;
+                    Console.WriteLine($"TrackId: {track.Id}");
+                    Console.WriteLine($"AlbumId: {track.Album.Id}");
+                    Console.WriteLine($"ArtistId: {track.Artists[0].Id}");
+                    Console.WriteLine($"TrackId: {track.Id}");
+                    Console.WriteLine($"Genre: {mainGenre}");
+                    Console.WriteLine($"Artist: {track.Artists[0].Name}");
+                    Console.WriteLine($"Year: {year}");
+                    Console.WriteLine($"Album: {track.Album.Name}");
+                    Console.WriteLine($"TrackNumber: {track.TrackNumber}");
+                    Console.WriteLine($"Song: {track.Name}");
+                    string mp3Name = $"{track.Artists[0].Name} - ({year}) {track.Album.Name} - {track.TrackNumber} - {track.Name}.mp3";
+                    Console.WriteLine($"*** MP3 name: {mp3Name}");
+                    Console.WriteLine("-----------------------------");
+                }
+            }
+
+            /*
+1 Name: Playlist123, ID: 6hO0h1g4aFx7JjUKOdrUZX
+
+Artist: Aimee Mann
+Year: 1995
+Album: I'm With Stupid
+TrackNumber: 10
+Song: That's Just What You Are
+-----------------------------
+Genre: Unknown
+Artist: Wet Leg
+Year: 2025
+Album: moisturizer
+TrackNumber: 8
+Song: pokemon
+-----------------------------
+Genre: Unknown
+Artist: The Hollies
+Year: 1970
+Album: Confessions of the Mind (Expanded Edition)
+TrackNumber: 20
+Song: He Ain't Heavy He's My Brother - 2003 Remaster
+-----------------------------
+            */
 
             // Get playlist items (auto-paging)
+            /*
             var allItems = new List<PlaylistTrack<IPlayableItem>>();
             var playlistItemsPage = await spotify.Playlists.GetItems(playlistId, new PlaylistGetItemsRequest { Limit = 100 });
             allItems.AddRange(playlistItemsPage.Items);
