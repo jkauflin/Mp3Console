@@ -23,9 +23,20 @@ namespace Mp3Console
                 .AddUserSecrets<Program>()
                 .Build();
 
-            var clientId = config["Spotify:ClientId"];
-            var clientSecret = config["Spotify:ClientSecret"]; // optional for PKCE but useful for refresh on some flows
-            var redirectUri = config["Spotify:RedirectUri"] ?? "http://localhost:5000/callback";
+            /*
+            // Get configuration parameters from the Secrets JSON (not checked into source code control)
+            IConfigurationRoot config = new ConfigurationBuilder()
+                .AddUserSecrets<Program>()
+                .Build();
+            jjkwebStorageConnStr = config["jjkwebStorageConnStr"];
+            jjkdb1Uri = config["jjkdb1Uri"];
+            jjkdb1Key = config["jjkdb1Key"];
+            */
+
+            var clientId = config["SpotifyClientId"];
+            var clientSecret = config["SpotifyClientSecret"]; // optional for PKCE but useful for refresh on some flows
+            //var redirectUri = config["Spotify:RedirectUri"] ?? "http://127.0.0.1:5000/callback";
+            var redirectUri = "http://127.0.0.1:5000/callback";
 
             if (string.IsNullOrWhiteSpace(clientId))
             {
@@ -123,7 +134,7 @@ namespace Mp3Console
             }
 
             // Get current user's playlists (auto-paging)
-            var allPlaylists = new List<SimplePlaylist>();
+            var allPlaylists = new List<PlaylistSimplified>();
             var page = await spotify.Playlists.CurrentUsers();
             allPlaylists.AddRange(page.Items);
             while (page.Next != null)
