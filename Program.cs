@@ -134,7 +134,7 @@ namespace Mp3Console
             }
 
             // Get current user's playlists (auto-paging)
-            var allPlaylists = new List<PlaylistSimplified>();
+            var allPlaylists = new List<SimplePlaylist>();
             var page = await spotify.Playlists.CurrentUsers();
             allPlaylists.AddRange(page.Items);
             while (page.Next != null)
