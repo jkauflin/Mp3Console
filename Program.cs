@@ -133,22 +133,46 @@ namespace Mp3Console
                 tokenStore.Save(tokenResponse);
             }
 
+
+            /*
+            // 2. Efficiently paginate through ALL playlists using the built-in Paginator
+            var allPlaylists = await spotify.PaginateAll()
+                (firstPage);
+
+            Console.WriteLine($"Found {allPlaylists.Count} playlists:");
+            foreach (var playlist in allPlaylists)
+            {            var allPlaylists = new List<SimplePlaylist>();
+
+                Console.WriteLine($"- {playlist.Name} (ID: {playlist.Id})");
+            }
+            */
+
+
             // Get current user's playlists (auto-paging)
-            var allPlaylists = new List<SimplePlaylist>();
+            var allPlaylists = new List<String>();
+            //var allPlaylists = new List<SimplePlaylist>();
+
             var page = await spotify.Playlists.CurrentUsers();
-            allPlaylists.AddRange(page.Items);
+            //allPlaylists.AddRange(page.Items);
             while (page.Next != null)
             {
-                page = await spotify.Next(page);
-                allPlaylists.AddRange(page.Items);
+                page = await spotify.NextPage(page);
+                /*
+                •	Or the SDK follows the exact Next URL returned by the API 
+                (which uses /users/{id}/playlists) while the token must be used against the 
+                /me/playlists flow; that causes an auth mismatch on subsequent requests.
+                 */
+                //allPlaylists.AddRange(page.Items);
             }
 
+
+            /*
             Console.WriteLine();
             Console.WriteLine("Your playlists:");
             for (int i = 0; i < allPlaylists.Count; i++)
             {
                 var p = allPlaylists[i];
-                Console.WriteLine($"[{i+1}] {p.Name}  (id: {p.Id})");
+                //Console.WriteLine($"[{i+1}] {p.Name}  (id: {p.Id})");
             }
 
             Console.WriteLine();
@@ -194,6 +218,7 @@ namespace Mp3Console
                     Console.WriteLine($"{idx++}: [unknown track type]");
                 }
             }
+            */
 
             // Display token info (optional)
             Console.WriteLine();
