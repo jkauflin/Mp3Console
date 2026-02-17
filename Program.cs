@@ -7,10 +7,13 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
+using TagLib;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using SpotifyAPI.Web;
 using SpotifyAPI.Web.Auth;
+using File = System.IO.File;
 
 namespace Mp3Console
 {
@@ -116,56 +119,51 @@ namespace Mp3Console
                 tokenStore.Save(tokenResponse);
             }
 
+            
+            // Get a paginated list of the current user's playlists (first page)
             var playlistPage = await spotify.Playlists.CurrentUsers();
 
-            // 3. Handle Pagination (Optional but Recommended)
-            // Use Paginate to automatically fetch all playlists if the user has more than 50
-            int cnt = 0;
+            // Use Paginate to automatically fetch all user playlists
+            //int cnt = 0;
             string playlistId = "";
+            string targetPlaylistName = "Playlist123";
             await foreach (var playlist in spotify.Paginate(playlistPage))
             {
-                cnt++;
-                if (cnt == 1)
+                if (targetPlaylistName.Equals(playlist.Name, StringComparison.OrdinalIgnoreCase))
                 {
-                    Console.WriteLine($"{cnt} Name: {playlist.Name}, ID: {playlist.Id}");
                     playlistId = playlist.Id;
+                    break;
                 }
-
                 //Console.WriteLine($"Total Tracks: {playlist.Tracks.Total}");
             }
 
-            /*
-            Console.WriteLine();
-            Console.WriteLine("Your playlists:");
-            for (int i = 0; i < allPlaylists.Count; i++)
+            // Check if we found the target playlist
+            if (string.IsNullOrEmpty(playlistId))
             {
-                var p = allPlaylists[i];
-                //Console.WriteLine($"[{i+1}] {p.Name}  (id: {p.Id})");
-            }
-
-            Console.WriteLine();
-            Console.Write("Enter playlist number to list tracks (or empty to quit): ");
-            var input = Console.ReadLine();
-            if (string.IsNullOrWhiteSpace(input))
-                return;
-
-            if (!int.TryParse(input, out var sel) || sel < 1 || sel > allPlaylists.Count)
-            {
-                Console.WriteLine("Invalid selection.");
+                Console.WriteLine($"Playlist '{targetPlaylistName}' not found in your library.");
                 return;
             }
 
-            var playlistId = allPlaylists[sel - 1].Id;
-            */
 
-
-            // 1. Get the initial paging object for the playlist items
-            //var playlistItems = await spotify.Playlists.GetItems("YOUR_PLAYLIST_ID");
             var playlistItems = await spotify.Playlists.GetPlaylistItems(playlistId);
 
             // 2. Use Paginate to iterate through all pages of tracks automatically
+            string mp3Name = "";
+            string musicDir = "C:/Users/johnk/Music/Audacity/MP3export";
+            if (!Directory.Exists(musicDir))
+            {
+                // report error and exit if music directory doesn't exist
+                Console.WriteLine("Music directory not found: "  + musicDir);
+                return;
+            }
+
+            string m3u = "# Created on " + DateTime.Now.ToString();
+            var nl = Environment.NewLine;
+
+            int trackIndex = 0;
             await foreach (var item in spotify.Paginate(playlistItems))
             {
+                trackIndex++;
                 // Items in a playlist can be tracks or episodes (IPlayableItem)
                 if (item.Item is SpotifyAPI.Web.FullTrack track)
                 {
@@ -194,6 +192,7 @@ namespace Mp3Console
                     }
 
                     // track.Type = "Track"
+                    /*
                     string albumImageUrl = track.Album.Images.FirstOrDefault()?.Url;
                     Console.WriteLine($"TrackId: {track.Id}");
                     Console.WriteLine($"AlbumId: {track.Album.Id}");
@@ -205,68 +204,57 @@ namespace Mp3Console
                     Console.WriteLine($"Album: {track.Album.Name}");
                     Console.WriteLine($"TrackNumber: {track.TrackNumber}");
                     Console.WriteLine($"Song: {track.Name}");
-                    string mp3Name = $"{track.Artists[0].Name} - ({year}) {track.Album.Name} - {track.TrackNumber} - {track.Name}.mp3";
+                    */
+                    mp3Name = $"{track.Artists[0].Name} - ({year}) {track.Album.Name} - {track.TrackNumber} - {track.Name}.mp3";
                     Console.WriteLine($"*** MP3 name: {mp3Name}");
-                    Console.WriteLine("-----------------------------");
+
+                    // Attempt to update MP3 tags and rename file based on track number
+                    try
+                    {
+                        //var trackNumber = track.TrackNumber;
+                        if (trackIndex > 0)
+                        {
+                            var pattern = $"{trackIndex:D2}-*.mp3";
+                            var matches = Directory.GetFiles(musicDir, pattern, SearchOption.TopDirectoryOnly);
+                            if (matches.Length > 0)
+                            {
+                                var mp3Path = matches[0];
+                                var tfile = global::TagLib.File.Create(mp3Path);
+                                tfile.Tag.Title = track.Name;
+                                tfile.Tag.Album = track.Album?.Name ?? tfile.Tag.Album;
+                                tfile.Tag.Performers = track.Artists?.Select(a => a.Name).ToArray() ?? tfile.Tag.Performers;
+                                tfile.Tag.Track = (uint)track.TrackNumber;
+                                tfile.Tag.Year = uint.TryParse(year, out var y) ? y : tfile.Tag.Year;
+                                tfile.Save();
+
+                                //var newName = $"{trackNumber:D2}-{SanitizeFileName(track.Name)}.mp3";
+                                var newName = mp3Name;
+                                var newPath = Path.Combine(Path.GetDirectoryName(mp3Path) ?? musicDir, newName);
+                                if (!File.Exists(newPath))
+                                {
+                                    File.Move(mp3Path, newPath);
+                                    Console.WriteLine($"Tagged and renamed: {Path.GetFileName(mp3Path)} -> {newName}");
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"Target filename already exists: {newName}");
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Tagging/rename error: " + ex.Message);
+                    }
+
+                    m3u += nl + mp3Name;
                 }
             }
 
-            /*
-1 Name: Playlist123, ID: 6hO0h1g4aFx7JjUKOdrUZX
-
-Artist: Aimee Mann
-Year: 1995
-Album: I'm With Stupid
-TrackNumber: 10
-Song: That's Just What You Are
------------------------------
-Genre: Unknown
-Artist: Wet Leg
-Year: 2025
-Album: moisturizer
-TrackNumber: 8
-Song: pokemon
------------------------------
-Genre: Unknown
-Artist: The Hollies
-Year: 1970
-Album: Confessions of the Mind (Expanded Edition)
-TrackNumber: 20
-Song: He Ain't Heavy He's My Brother - 2003 Remaster
------------------------------
-            */
-
-            // Get playlist items (auto-paging)
-            /*
-            var allItems = new List<PlaylistTrack<IPlayableItem>>();
-            var playlistItemsPage = await spotify.Playlists.GetItems(playlistId, new PlaylistGetItemsRequest { Limit = 100 });
-            allItems.AddRange(playlistItemsPage.Items);
-            while (playlistItemsPage.Next != null)
-            {
-                playlistItemsPage = await spotify.Next(playlistItemsPage);
-                allItems.AddRange(playlistItemsPage.Items);
+            if (trackIndex > 0) {
+                string m3uPath = Path.Combine(musicDir, targetPlaylistName + ".m3u");
+                File.WriteAllText(m3uPath, m3u);
             }
-
-            Console.WriteLine();
-            Console.WriteLine($"Tracks in playlist {allPlaylists[sel-1].Name}:");
-            int idx = 1;
-            foreach (var item in allItems)
-            {
-                if (item.Track is FullTrack track)
-                {
-                    var artists = string.Join(", ", track.Artists?.ConvertAll(a => a.Name) ?? new string[] { });
-                    Console.WriteLine($"{idx++}: {track.Name} - {artists}");
-                }
-                else if (item.Track is SimpleTrack simple)
-                {
-                    Console.WriteLine($"{idx++}: {simple.Name}");
-                }
-                else
-                {
-                    Console.WriteLine($"{idx++}: [unknown track type]");
-                }
-            }
-            */
 
             // Display token info (optional)
             Console.WriteLine();
@@ -276,6 +264,9 @@ Song: He Ain't Heavy He's My Brother - 2003 Remaster
                 Console.WriteLine("Refresh token: " + (tokenResponse.RefreshToken ?? "[not returned]"));
             }
         }
+
+
+
 
         static string GenerateCodeVerifier()
         {
@@ -299,6 +290,17 @@ Song: He Ain't Heavy He's My Brother - 2003 Remaster
                 .TrimEnd('=')
                 .Replace('+', '-')
                 .Replace('/', '_');
+        }
+
+        static string SanitizeFileName(string name)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            var sb = new StringBuilder();
+            foreach (var ch in name)
+            {
+                if (!invalid.Contains(ch)) sb.Append(ch);
+            }
+            return sb.ToString().Trim();
         }
 
         static void OpenBrowser(string url)
@@ -416,26 +418,26 @@ internal class TokenStore
 
         var protectedBytes = File.ReadAllBytes(_path);
         byte[] bytes;
-            try
-            {
-                // AES decryption: first 16 bytes are IV
-                var key = GetAesKey();
-                using var ms = new MemoryStream(protectedBytes);
-                var iv = new byte[16];
-                var read = ms.Read(iv, 0, iv.Length);
-                if (read != iv.Length) return null;
-                using var aes = Aes.Create();
-                aes.Key = key;
-                aes.IV = iv;
-                using var cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Read);
-                using var outMs = new MemoryStream();
-                cs.CopyTo(outMs);
-                bytes = outMs.ToArray();
-            }
-            catch
-            {
-                return null;
-            }
+        try
+        {
+            // AES decryption: first 16 bytes are IV
+            var key = GetAesKey();
+            using var ms = new MemoryStream(protectedBytes);
+            var iv = new byte[16];
+            var read = ms.Read(iv, 0, iv.Length);
+            if (read != iv.Length) return null;
+            using var aes = Aes.Create();
+            aes.Key = key;
+            aes.IV = iv;
+            using var cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Read);
+            using var outMs = new MemoryStream();
+            cs.CopyTo(outMs);
+            bytes = outMs.ToArray();
+        }
+        catch
+        {
+            return null;
+        }
 
         try
         {
