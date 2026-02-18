@@ -1,4 +1,14 @@
-﻿using System;
+﻿/*==============================================================================
+ * (C) Copyright 2026 John J Kauflin, All rights reserved.
+ *----------------------------------------------------------------------------
+ * DESCRIPTION:  Console application to connect to Spotify, get a user's playlists,
+ *               save information in Azure Cosmos DB, and update MP3 tags 
+ *----------------------------------------------------------------------------
+ * Modification History
+ * 2026-01-14 JJK   Initial version, added Spotify API integration and token management
+ * 2026-01-18 JJK   Updated to write to Cosmos DB
+ *============================================================================*/
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -29,6 +39,7 @@ namespace Mp3Console
             var clientId = config["SpotifyClientId"];
             var clientSecret = config["SpotifyClientSecret"]; // optional for PKCE but useful for refresh on some flows
             var redirectUri = "http://127.0.0.1:5000/callback";
+            var nl = Environment.NewLine;
 
             // Attempt to load stored tokens
             var tokenStore = new TokenStore();
@@ -124,9 +135,12 @@ namespace Mp3Console
             var playlistPage = await spotify.Playlists.CurrentUsers();
 
             // Use Paginate to automatically fetch all user playlists
-            //int cnt = 0;
+            int cnt = 0;
             string playlistId = "";
-            string targetPlaylistName = "Playlist123";
+            //string targetPlaylistName = "Playlist123";
+            string targetPlaylistName = "xxx";
+            string rootDir = "C:/Users/johnk/Downloads";
+            string pl = "";
             await foreach (var playlist in spotify.Paginate(playlistPage))
             {
                 if (targetPlaylistName.Equals(playlist.Name, StringComparison.OrdinalIgnoreCase))
@@ -134,8 +148,21 @@ namespace Mp3Console
                     playlistId = playlist.Id;
                     break;
                 }
-                //Console.WriteLine($"Total Tracks: {playlist.Tracks.Total}");
+
+                cnt++;
+                pl += $"{cnt},{playlist.Id},{playlist.Name}{nl}";
+
+                //playlist.Description
+                Console.WriteLine($"{cnt},{playlist.Id},{playlist.Name}");
+                await Task.Delay(3000);
             }
+
+            if (cnt > 0)
+            {
+                string plPath = Path.Combine(rootDir, "splaylists.txt");
+                File.WriteAllText(plPath, pl);
+            }
+
 
             // Check if we found the target playlist
             if (string.IsNullOrEmpty(playlistId))
@@ -158,7 +185,6 @@ namespace Mp3Console
             }
 
             string m3u = "# Created on " + DateTime.Now.ToString();
-            var nl = Environment.NewLine;
 
             int trackIndex = 0;
             await foreach (var item in spotify.Paginate(playlistItems))
